@@ -95,8 +95,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/proyecto-cicd:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/proyecto-cicd:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -104,7 +104,7 @@ jobs:
         id: set_outputs
         if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
         run: |
-          echo "repo_name=todo-list-app" >> $GITHUB_OUTPUT
+          echo "repo_name=proyecto-cicd" >> $GITHUB_OUTPUT
           echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
 
   # =======================================================
@@ -132,7 +132,7 @@ jobs:
 
       - name: Deploy CloudFormation Staging Stack
         run: |
-          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.build-test-publish.outputs.repo_name }}:${{ needs.build-test-publish.outputs.image_tag }}"
+          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/proyecto-cicd:${{ needs.build-test-publish.outputs.image_tag }}"
           echo "Deploying Image URI: $IMAGE_URI"
 
           aws cloudformation deploy \
@@ -219,7 +219,7 @@ jobs:
           aws-region: us-east-1
       - name: Deploy CloudFormation Production Stack
         run: |
-          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.build-test-publish.outputs.repo_name }}:${{ needs.build-test-publish.outputs.image_tag }}"
+          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/proyecto-cicd:${{ needs.build-test-publish.outputs.image_tag }}"
           aws cloudformation deploy \
             --template-file template.yaml \
             --stack-name todo-list-prod-stack \
