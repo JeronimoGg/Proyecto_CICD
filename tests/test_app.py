@@ -67,9 +67,9 @@ class TestAppIntegration:
             'description': 'Test Description'
         })
         
-        # Get the todo ID (assuming it's 1)
-        todo_manager = TodoManager(self.test_file)
-        todos = todo_manager.get_all_todos()
+        # Get the todo ID from the API
+        response = self.app.get('/api/todos')
+        todos = json.loads(response.data)
         todo_id = todos[0]['id']
         
         # Update status to completed
@@ -79,8 +79,9 @@ class TestAppIntegration:
         
         assert response.status_code == 200
         
-        # Verify the todo was updated
-        updated_todo = todo_manager.get_todo_by_id(todo_id)
+        # Verify the todo was updated via API
+        response = self.app.get(f'/api/todos/{todo_id}')
+        updated_todo = json.loads(response.data)
         assert updated_todo['status'] == 'completed'
     
     def test_delete_todo(self):
@@ -91,9 +92,9 @@ class TestAppIntegration:
             'description': 'Test Description'
         })
         
-        # Get the todo ID
-        todo_manager = TodoManager(self.test_file)
-        todos = todo_manager.get_all_todos()
+        # Get the todo ID from the API
+        response = self.app.get('/api/todos')
+        todos = json.loads(response.data)
         todo_id = todos[0]['id']
         
         # Delete the todo
@@ -101,8 +102,10 @@ class TestAppIntegration:
         
         assert response.status_code == 200
         
-        # Verify the todo was deleted
-        assert len(todo_manager.get_all_todos()) == 0
+        # Verify the todo was deleted via API
+        response = self.app.get('/api/todos')
+        remaining_todos = json.loads(response.data)
+        assert len(remaining_todos) == 0
     
     def test_api_get_todos(self):
         """Test API endpoint to get all todos"""
@@ -208,9 +211,16 @@ class TestAppIntegration:
     
     def test_api_delete_todo(self):
         """Test API endpoint to delete a todo"""
-        # First create a todo
-        todo_manager = TodoManager(self.test_file)
-        todo = todo_manager.create_todo("Test Task")
+        # First create a todo via API
+        response = self.app.post('/api/todos',
+                               data=json.dumps({
+                                   'title': 'Test Task',
+                                   'description': 'Test Description'
+                               }),
+                               content_type='application/json')
+        
+        assert response.status_code == 201
+        todo = json.loads(response.data)
         todo_id = todo['id']
         
         # Delete the todo
@@ -221,8 +231,9 @@ class TestAppIntegration:
         data = json.loads(response.data)
         assert 'message' in data
         
-        # Verify the todo was deleted
-        assert todo_manager.get_todo_by_id(todo_id) is None
+        # Verify the todo was deleted via API
+        response = self.app.get(f'/api/todos/{todo_id}')
+        assert response.status_code == 404
     
     def test_api_delete_todo_not_found(self):
         """Test API endpoint to delete non-existent todo"""
