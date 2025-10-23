@@ -37,7 +37,7 @@ class TodoManager:
             return 1
         return max(todo.get('id', 0) for todo in self.todos) + 1
     
-    def create_todo(self, title: str, description: str = "", priority: str = "medium", due_date: str = "") -> Dict:
+    def create_todo(self, title: str, description: str = "", priority: str = "medium", due_date: str = "", status: str = "pending") -> Dict:
         """Create a new todo item"""
         if not title.strip():
             raise ValueError("Title cannot be empty")
@@ -46,7 +46,7 @@ class TodoManager:
             'id': self._get_next_id(),
             'title': title.strip(),
             'description': description.strip(),
-            'status': 'pending',
+            'status': status.lower() if status.lower() in ['pending', 'completed', 'in_progress'] else 'pending',
             'priority': priority.lower() if priority.lower() in ['low', 'medium', 'high'] else 'medium',
             'due_date': due_date,
             'created_at': datetime.now().isoformat(),
