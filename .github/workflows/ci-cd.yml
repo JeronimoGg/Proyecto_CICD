@@ -129,8 +129,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' # Solo en push a main
     outputs:
       alb_url_staging: ${{ steps.get_stack_outputs.outputs.alb_url }}
-      cluster_name_staging: "calculadora-staging-cluster"
-      service_name_staging: "calculadora-staging-service"
+      cluster_name_staging: "todo-list-staging-cluster"
+      service_name_staging: "todo-list-staging-service"
 
     steps:
       # 1. Checkout del código (para acceder a template.yaml)
@@ -155,7 +155,7 @@ jobs:
 
           aws cloudformation deploy \
             --template-file template.yaml \
-            --stack-name calculadora-staging-stack \
+            --stack-name todo-list-staging-stack \
             --parameter-overrides \
               EnvironmentName=staging \
               DockerImageUri=$IMAGE_URI \
@@ -174,7 +174,7 @@ jobs:
              sudo apt-get update && sudo apt-get install -y jq
           fi
 
-          STACK_OUTPUTS=$(aws cloudformation describe-stacks --stack-name calculadora-staging-stack --query "Stacks[0].Outputs" --region us-east-1 --output json)
+          STACK_OUTPUTS=$(aws cloudformation describe-stacks --stack-name todo-list-staging-stack --query "Stacks[0].Outputs" --region us-east-1 --output json)
           echo "Raw Stack Outputs: $STACK_OUTPUTS" # Log para depuración
 
           # Extraer la URL del ALB (ALBDnsName)
@@ -265,8 +265,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     outputs: # Definir salida para la URL del ALB de producción
       alb_url_prod: ${{ steps.get_stack_outputs.outputs.alb_url }}
-      cluster_name_prod: "calculadora-production-cluster"
-      service_name_prod: "calculadora-production-service"
+      cluster_name_prod: "todo-list-production-cluster"
+      service_name_prod: "todo-list-production-service"
 
     steps:
       # 1. Checkout del código
@@ -291,7 +291,7 @@ jobs:
 
           aws cloudformation deploy \
             --template-file template.yaml \
-            --stack-name calculadora-prod-stack \
+            --stack-name todo-list-prod-stack \
             --parameter-overrides \
               EnvironmentName=production \
               DockerImageUri=$IMAGE_URI \
@@ -310,7 +310,7 @@ jobs:
              sudo apt-get update && sudo apt-get install -y jq
           fi
 
-          STACK_OUTPUTS=$(aws cloudformation describe-stacks --stack-name calculadora-prod-stack --query "Stacks[0].Outputs" --region us-east-1 --output json)
+          STACK_OUTPUTS=$(aws cloudformation describe-stacks --stack-name todo-list-prod-stack --query "Stacks[0].Outputs" --region us-east-1 --output json)
           echo "Raw Stack Outputs: $STACK_OUTPUTS" # Log
 
           # Extraer la URL del ALB (ALBDnsName)

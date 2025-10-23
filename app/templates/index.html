@@ -1,25 +1,493 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <title>Calculadora</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To-Do List</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.8rem;
+            font-weight: bold;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .add-form {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        label {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+
+        input, select, textarea {
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-small {
+            padding: 8px 15px;
+            font-size: 0.9rem;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #868e96 0%, #6c757d 100%);
+        }
+
+        .todos-container {
+            margin-top: 30px;
+        }
+
+        .todo-item {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .todo-item:hover {
+            border-color: #667eea;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .todo-item.completed {
+            opacity: 0.7;
+            background: #f8f9fa;
+        }
+
+        .todo-item.completed .todo-title {
+            text-decoration: line-through;
+            color: #6c757d;
+        }
+
+        .todo-header {
+            display: flex;
+            justify-content: between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+
+        .todo-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #212529;
+            margin-bottom: 5px;
+            flex: 1;
+        }
+
+        .todo-priority {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-left: 10px;
+        }
+
+        .priority-baja {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .priority-media {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .priority-alta {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .todo-description {
+            color: #6c757d;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+
+        .todo-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-bottom: 15px;
+        }
+
+        .todo-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .overdue {
+            border-left: 4px solid #dc3545;
+        }
+
+        .overdue .todo-title {
+            color: #dc3545;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: #495057;
+        }
+
+        .empty-state p {
+            font-size: 1.1rem;
+        }
+
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #e9ecef;
+            background: white;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .filter-btn:hover {
+            border-color: #667eea;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .todo-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .todo-priority {
+                margin-left: 0;
+                margin-top: 5px;
+            }
+            
+            .todo-actions {
+                flex-direction: column;
+            }
+            
+            .filters {
+                justify-content: center;
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
 </head>
 <body>
-    <h1>Calculadora</h1>
-    <form method="post">
-        <input type="text" name="num1" placeholder="Número 1" required>
-        <input type="text" name="num2" placeholder="Número 2" required>
-        <select name="operacion">
-            <option value="sumar">Sumar</option>
-            <option value="restar">Restar</option>
-            <option value="multiplicar">Multiplicar</option>
-            <option value="dividir">Dividir</option>
-            <option value="potencia">Potencia</option>
-            <option value="modulo">Módulo</option>
+    <div class="container">
+        <div class="header">
+            <h1>📝 To-Do List</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="stat-number">{{ stats.total }}</span>
+                    <span class="stat-label">Total</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">{{ stats.pending }}</span>
+                    <span class="stat-label">Pendientes</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">{{ stats.completed }}</span>
+                    <span class="stat-label">Completadas</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">{{ "%.1f"|format(stats.completion_rate) }}%</span>
+                    <span class="stat-label">Progreso</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Formulario para agregar tareas -->
+            <div class="add-form fade-in">
+                <h3 style="margin-bottom: 20px; color: #495057;">➕ Agregar Nueva Tarea</h3>
+                <form method="POST" action="/add">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="title">Título *</label>
+                            <input type="text" id="title" name="title" required placeholder="¿Qué necesitas hacer?">
+                        </div>
+                        <div class="form-group">
+                            <label for="priority">Prioridad</label>
+                            <select id="priority" name="priority">
+                                <option value="baja">🟢 Baja</option>
+                                <option value="media" selected>🟡 Media</option>
+                                <option value="alta">🔴 Alta</option>
         </select>
-        <button type="submit">Calcular</button>
+                        </div>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="description">Descripción</label>
+                        <textarea id="description" name="description" placeholder="Detalles adicionales..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="due_date">Fecha de vencimiento</label>
+                            <input type="date" id="due_date" name="due_date">
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: end;">
+                            <button type="submit" class="btn">✨ Crear Tarea</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Filtros -->
+            <div class="filters">
+                <button class="filter-btn active" onclick="filterTodos('all')">Todas</button>
+                <button class="filter-btn" onclick="filterTodos('pendiente')">Pendientes</button>
+                <button class="filter-btn" onclick="filterTodos('completada')">Completadas</button>
+                <button class="filter-btn" onclick="filterTodos('overdue')">Vencidas</button>
+            </div>
+
+            <!-- Lista de tareas -->
+            <div class="todos-container">
+                {% if todos %}
+                    {% for todo in todos %}
+                        <div class="todo-item fade-in {{ 'completed' if todo.status == 'completada' else '' }}">
+                            <div class="todo-header">
+                                <div class="todo-title">{{ todo.title }}</div>
+                                <span class="todo-priority priority-{{ todo.priority }}">{{ todo.priority }}</span>
+                            </div>
+                            
+                            {% if todo.description %}
+                                <div class="todo-description">{{ todo.description }}</div>
+                            {% endif %}
+                            
+                            <div class="todo-meta">
+                                <div>
+                                    📅 Creada: {{ todo.created_at[:10] }}
+                                    {% if todo.due_date %}
+                                        | ⏰ Vence: {{ todo.due_date }}
+                                    {% endif %}
+                                </div>
+                                {% if todo.status == 'completada' and todo.completed_at %}
+                                    <div>✅ Completada: {{ todo.completed_at[:10] }}</div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="todo-actions">
+                                {% if todo.status == 'pendiente' %}
+                                    <form method="POST" action="/update/{{ todo.id }}" style="display: inline;">
+                                        <input type="hidden" name="status" value="completada">
+                                        <button type="submit" class="btn btn-success btn-small">✅ Completar</button>
+                                    </form>
+                                {% else %}
+                                    <form method="POST" action="/update/{{ todo.id }}" style="display: inline;">
+                                        <input type="hidden" name="status" value="pendiente">
+                                        <button type="submit" class="btn btn-secondary btn-small">↩️ Reabrir</button>
+                                    </form>
+                                {% endif %}
+                                
+                                <form method="POST" action="/delete/{{ todo.id }}" style="display: inline;" 
+                                      onsubmit="return confirm('¿Estás seguro de que quieres eliminar esta tarea?')">
+                                    <button type="submit" class="btn btn-danger btn-small">🗑️ Eliminar</button>
     </form>
-    {% if resultado is not none %}
-        <h2>Resultado: {{ resultado }}</h2>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">
+                        <h3>🎉 ¡No hay tareas!</h3>
+                        <p>Agrega tu primera tarea usando el formulario de arriba.</p>
+                    </div>
     {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Función para filtrar tareas
+        function filterTodos(filter) {
+            // Actualizar botones activos
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Aquí podrías implementar filtrado con JavaScript
+            // Por ahora, el filtrado se hace en el servidor
+            if (filter === 'all') {
+                window.location.href = '/';
+            } else if (filter === 'overdue') {
+                // Implementar filtro de vencidas
+                console.log('Filtrar vencidas');
+            } else {
+                window.location.href = '/?status=' + filter;
+            }
+        }
+
+        // Auto-focus en el campo de título
+        document.getElementById('title').focus();
+
+        // Animación de entrada para elementos
+        document.addEventListener('DOMContentLoaded', function() {
+            const items = document.querySelectorAll('.todo-item');
+            items.forEach((item, index) => {
+                item.style.animationDelay = (index * 0.1) + 's';
+            });
+        });
+    </script>
 </body>
 </html>

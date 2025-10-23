@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  CloudFormation template para desplegar la aplicacion Calculadora en ECS Fargate
+  CloudFormation template para desplegar la aplicacion To-Do List en ECS Fargate
   con ALB. Usa la VPC por defecto y el LabRole existente.
 
 Parameters:
@@ -26,7 +26,7 @@ Resources:
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '/ecs/calculadora-${EnvironmentName}-task'
+      LogGroupName: !Sub '/ecs/todo-list-${EnvironmentName}-task'
       RetentionInDays: 7 # Retener logs por 7 días (ajusta si es necesario)
       Tags:
         - Key: Environment
@@ -36,7 +36,7 @@ Resources:
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Sub 'calculadora-${EnvironmentName}-cluster'
+      ClusterName: !Sub 'todo-list-${EnvironmentName}-cluster'
       Tags:
         - Key: Environment
           Value: !Ref EnvironmentName
@@ -78,7 +78,7 @@ Resources:
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub 'calculadora-${EnvironmentName}-alb'
+      Name: !Sub 'todo-list-${EnvironmentName}-alb'
       Subnets: !Ref SubnetIds # Debe estar en subredes publicas
       SecurityGroups:
         - !Ref ALBSecurityGroup
@@ -127,7 +127,7 @@ Resources:
     Type: AWS::ECS::TaskDefinition
     DependsOn: ECSLogGroup # Asegura que el Log Group exista primero
     Properties:
-      Family: !Sub 'calculadora-${EnvironmentName}-task'
+      Family: !Sub 'todo-list-${EnvironmentName}-task'
       RequiresCompatibilities:
         - FARGATE
       NetworkMode: awsvpc
@@ -136,7 +136,7 @@ Resources:
       TaskRoleArn: !Ref LabRoleArn # Rol para permisos DENTRO del contenedor (si necesita llamar a otros servicios AWS)
       ExecutionRoleArn: !Ref LabRoleArn # Rol para que ECS/Fargate pueda descargar imagen, enviar logs, etc.
       ContainerDefinitions:
-        - Name: !Sub 'calculadora-${EnvironmentName}-container'
+        - Name: !Sub 'todo-list-${EnvironmentName}-container'
           Image: !Ref DockerImageUri # Imagen de Docker Hub
           PortMappings:
             - ContainerPort: 8000
@@ -156,7 +156,7 @@ Resources:
   ECSService:
     Type: AWS::ECS::Service
     Properties:
-      ServiceName: !Sub 'calculadora-${EnvironmentName}-service'
+      ServiceName: !Sub 'todo-list-${EnvironmentName}-service'
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref ECSTaskDefinition
       DesiredCount: 1 # Numero inicial de tareas
@@ -168,7 +168,7 @@ Resources:
           SecurityGroups:
             - !Ref ECSServiceSecurityGroup
       LoadBalancers:
-        - ContainerName: !Sub 'calculadora-${EnvironmentName}-container'
+        - ContainerName: !Sub 'todo-list-${EnvironmentName}-container'
           ContainerPort: 8000
           TargetGroupArn: !Ref ECSTargetGroup
       # DesiredCount y TaskDefinition se actualizan en despliegues posteriores
