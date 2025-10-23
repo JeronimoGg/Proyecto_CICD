@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To-Do List App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .form-section {
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+        }
+
+        .todos-section {
+            padding: 30px;
+        }
+
+        .todo-item {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+            transition: transform 0.2s;
+        }
+
+        .todo-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .todo-item.completed {
+            opacity: 0.7;
+            border-left-color: #51cf66;
+        }
+
+        .todo-item.high-priority {
+            border-left-color: #ff6b6b;
+        }
+
+        .todo-item.low-priority {
+            border-left-color: #51cf66;
+        }
+
+        .todo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .todo-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .todo-priority {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .priority-high {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .priority-medium {
+            background: #ffd43b;
+            color: #495057;
+        }
+
+        .priority-low {
+            background: #51cf66;
+            color: white;
+        }
+
+        .todo-description {
+            color: #6c757d;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+
+        .todo-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+
+        .todo-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.8em;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+
+        .status-pending {
+            background: #ffeaa7;
+            color: #d63031;
+        }
+
+        .status-in-progress {
+            background: #74b9ff;
+            color: white;
+        }
+
+        .status-completed {
+            background: #00b894;
+            color: white;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #495057;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .stats {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .todo-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            
+            .todo-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📝 To-Do List</h1>
+            <p>Organiza tus tareas de manera eficiente</p>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-number">{{ stats.total }}</div>
+                <div class="stat-label">Total</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">{{ stats.pending }}</div>
+                <div class="stat-label">Pendientes</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">{{ stats.completed }}</div>
+                <div class="stat-label">Completadas</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">{{ stats.completion_rate }}%</div>
+                <div class="stat-label">Progreso</div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h2 style="margin-bottom: 20px; color: #495057;">➕ Nueva Tarea</h2>
+            <form method="POST" action="/add">
+                <div class="form-group">
+                    <label for="title">Título *</label>
+                    <input type="text" id="title" name="title" required placeholder="¿Qué necesitas hacer?">
+                </div>
+                
+                <div class="form-group">
+                    <label for="description">Descripción</label>
+                    <textarea id="description" name="description" rows="3" placeholder="Detalles adicionales..."></textarea>
+                </div>
+                
+                <div style="display: flex; gap: 20px;">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="priority">Prioridad</label>
+                        <select id="priority" name="priority">
+                            <option value="low">🟢 Baja</option>
+                            <option value="medium" selected>🟡 Media</option>
+                            <option value="high">🔴 Alta</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" style="flex: 1;">
+                        <label for="due_date">Fecha límite</label>
+                        <input type="date" id="due_date" name="due_date">
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn">Crear Tarea</button>
+            </form>
+        </div>
+
+        <div class="todos-section">
+            <h2 style="margin-bottom: 20px; color: #495057;">📋 Mis Tareas</h2>
+            
+            {% if todos %}
+                {% for todo in todos %}
+                <div class="todo-item {{ 'completed' if todo.status == 'completed' else '' }} {{ todo.priority }}-priority">
+                    <div class="todo-header">
+                        <div class="todo-title">{{ todo.title }}</div>
+                        <div class="todo-priority priority-{{ todo.priority }}">
+                            {{ todo.priority }}
+                        </div>
+                    </div>
+                    
+                    {% if todo.description %}
+                    <div class="todo-description">{{ todo.description }}</div>
+                    {% endif %}
+                    
+                    <div class="todo-meta">
+                        <div>
+                            <span class="status-badge status-{{ todo.status }}">
+                                {% if todo.status == 'pending' %}⏳ Pendiente
+                                {% elif todo.status == 'in_progress' %}🔄 En Progreso
+                                {% elif todo.status == 'completed' %}✅ Completada
+                                {% endif %}
+                            </span>
+                            {% if todo.due_date %}
+                                <span style="margin-left: 10px;">📅 {{ todo.due_date }}</span>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="todo-actions">
+                            {% if todo.status != 'completed' %}
+                            <form method="POST" action="/update/{{ todo.id }}" style="display: inline;">
+                                <input type="hidden" name="status" value="completed">
+                                <button type="submit" class="btn btn-success btn-small">✅ Completar</button>
+                            </form>
+                            {% endif %}
+                            
+                            {% if todo.status == 'pending' %}
+                            <form method="POST" action="/update/{{ todo.id }}" style="display: inline;">
+                                <input type="hidden" name="status" value="in_progress">
+                                <button type="submit" class="btn btn-small">🔄 En Progreso</button>
+                            </form>
+                            {% endif %}
+                            
+                            <form method="POST" action="/delete/{{ todo.id }}" style="display: inline;" 
+                                  onsubmit="return confirm('¿Estás seguro de que quieres eliminar esta tarea?')">
+                                <button type="submit" class="btn btn-danger btn-small">🗑️ Eliminar</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <h3>🎉 ¡No hay tareas pendientes!</h3>
+                    <p>Crea tu primera tarea usando el formulario de arriba.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
