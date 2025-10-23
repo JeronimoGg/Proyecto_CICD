@@ -3,7 +3,12 @@ from .todo_manager import TodoManager
 import os
 
 app = Flask(__name__)
-todo_manager = TodoManager()
+
+# Use test file if in testing mode
+if os.environ.get('TESTING') == 'true':
+    todo_manager = TodoManager("test_todos.json")
+else:
+    todo_manager = TodoManager()
 
 @app.route('/')
 def index():

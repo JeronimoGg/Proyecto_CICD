@@ -11,6 +11,10 @@ class TestAppIntegration:
     def setup_method(self):
         """Setup method run before each test"""
         self.test_file = "test_todos.json"
+        
+        # Set testing environment variable
+        os.environ['TESTING'] = 'true'
+        
         self.app = app.test_client()
         self.app.testing = True
         
@@ -20,6 +24,10 @@ class TestAppIntegration:
     
     def teardown_method(self):
         """Cleanup method run after each test"""
+        # Clear testing environment variable
+        if 'TESTING' in os.environ:
+            del os.environ['TESTING']
+            
         if os.path.exists(self.test_file):
             os.remove(self.test_file)
     

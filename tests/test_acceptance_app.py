@@ -16,6 +16,9 @@ class TestAcceptanceApp:
         """Setup method run before each test"""
         self.test_file = "test_todos.json"
         
+        # Set testing environment variable
+        os.environ['TESTING'] = 'true'
+        
         # Clear todos for each test
         todo_manager = TodoManager(self.test_file)
         todo_manager.clear_all_todos()
@@ -31,6 +34,10 @@ class TestAcceptanceApp:
     def teardown_method(self):
         """Cleanup method run after each test"""
         self.driver.quit()
+        
+        # Clear testing environment variable
+        if 'TESTING' in os.environ:
+            del os.environ['TESTING']
         
         # Clean up test file
         import os
