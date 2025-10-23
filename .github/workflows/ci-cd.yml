@@ -16,7 +16,7 @@ on:
 
 jobs:
   # =======================================================
-  # JOB DE CI (build + tests + análisis estático)
+  # JOB DE CI (build + tests + análisis estático) a
   # =======================================================
   build-test-publish:
     runs-on: ubuntu-latest
