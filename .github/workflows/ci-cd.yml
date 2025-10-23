@@ -1,0 +1,280 @@
+# Nombre del Workflow
+name: CI/CD Pipeline AWS ECS con CloudFormation (3 Ramas)
+
+on:
+  push:
+    branches:
+      - dev
+      - staging
+      - main
+  pull_request:
+    branches:
+      - dev
+      - staging
+      - main
+  workflow_dispatch:
+
+jobs:
+  # =======================================================
+  # JOB DE CI (build + tests + análisis estático)
+  # =======================================================
+  build-test-publish:
+    runs-on: ubuntu-latest
+    outputs:
+      repo_name: ${{ steps.set_outputs.outputs.repo_name }}
+      image_tag: ${{ steps.set_outputs.outputs.image_tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Black (Formatter)
+        run: black app --check
+
+      - name: Run Pylint (Linter)
+        run: pylint app --output-format=text --fail-under=9 > pylint-report.txt || true
+
+      - name: Run Flake8 (Linter)
+        run: flake8 app --output-file=flake8-report.txt || true
+
+      - name: Run Unit Tests with Pytest and Coverage
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: pytest tests/test_todo_manager.py tests/test_app.py -v --cov=app --cov-report=xml --cov-report=html
+
+      - name: Upload Test Reports Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            htmlcov/
+            report.html
+            coverage.xml
+            pylint-report.txt
+            flake8-report.txt
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # SOLO CONSTRUIR Y PUBLICAR IMAGEN PARA STAGING Y MAIN
+      - name: Set up QEMU
+        if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        id: docker_build_push
+        if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set Job Outputs
+        id: set_outputs
+        if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
+        run: |
+          echo "repo_name=todo-list-app" >> $GITHUB_OUTPUT
+          echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+  # =======================================================
+  # JOBS DE STAGING (solo para rama staging)
+  # =======================================================
+  deploy-cfn-staging:
+    needs: build-test-publish
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging'
+    outputs:
+      alb_url_staging: ${{ steps.get_stack_outputs.outputs.alb_url }}
+      cluster_name_staging: "todo-list-staging-cluster"
+      service_name_staging: "todo-list-staging-service"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy CloudFormation Staging Stack
+        run: |
+          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.build-test-publish.outputs.repo_name }}:${{ needs.build-test-publish.outputs.image_tag }}"
+          echo "Deploying Image URI: $IMAGE_URI"
+
+          aws cloudformation deploy \
+            --template-file template.yaml \
+            --stack-name todo-list-staging-stack \
+            --parameter-overrides \
+              Environment=staging \
+              DockerImageUri=$IMAGE_URI \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changes
+
+      - name: Get Staging Stack Outputs
+        id: get_stack_outputs
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          STACK_OUTPUTS=$(aws cloudformation describe-stacks --stack-name todo-list-staging-stack --query "Stacks[0].Outputs" --output json)
+          ALB_URL=$(echo $STACK_OUTPUTS | jq -r '.[] | select(.OutputKey=="LoadBalancerURL") | .OutputValue')
+          echo "alb_url=${ALB_URL}" >> $GITHUB_OUTPUT
+
+  update-service-staging:
+    needs: [build-test-publish, deploy-cfn-staging]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging'
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Force New Deployment ECS Service Staging
+        run: |
+          aws ecs update-service --cluster ${{ needs.deploy-cfn-staging.outputs.cluster_name_staging }} \
+                                 --service ${{ needs.deploy-cfn-staging.outputs.service_name_staging }} \
+                                 --force-new-deployment \
+                                 --region us-east-1
+          aws ecs wait services-stable --cluster ${{ needs.deploy-cfn-staging.outputs.cluster_name_staging }} --services ${{ needs.deploy-cfn-staging.outputs.service_name_staging }} --region us-east-1
+
+  test-staging:
+    needs: [update-service-staging, deploy-cfn-staging]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run Acceptance Tests
+        env:
+          APP_BASE_URL: ${{ needs.deploy-cfn-staging.outputs.alb_url_staging }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          echo "Running acceptance tests against $APP_BASE_URL"
+          sleep 30
+          pytest tests/test_acceptance_app.py -v
+
+  # =======================================================
+  # JOBS DE PRODUCCIÓN (solo para rama main)
+  # =======================================================
+  deploy-cfn-prod:
+    needs: [build-test-publish]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      alb_url_prod: ${{ steps.get_stack_outputs.outputs.alb_url }}
+      cluster_name_prod: "todo-list-production-cluster"
+      service_name_prod: "todo-list-production-service"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Deploy CloudFormation Production Stack
+        run: |
+          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.build-test-publish.outputs.repo_name }}:${{ needs.build-test-publish.outputs.image_tag }}"
+          aws cloudformation deploy \
+            --template-file template.yaml \
+            --stack-name todo-list-prod-stack \
+            --parameter-overrides \
+              Environment=production \
+              DockerImageUri=$IMAGE_URI \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changes
+      - name: Get Production Stack Outputs
+        id: get_stack_outputs
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          STACK_OUTPUTS=$(aws cloudformation describe-stacks --stack-name todo-list-prod-stack --query "Stacks[0].Outputs" --output json)
+          ALB_URL=$(echo $STACK_OUTPUTS | jq -r '.[] | select(.OutputKey=="LoadBalancerURL") | .OutputValue')
+          echo "alb_url=${ALB_URL}" >> $GITHUB_OUTPUT
+
+  update-service-prod:
+    needs: [build-test-publish, deploy-cfn-prod]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Force New Deployment ECS Service Production
+        run: |
+          aws ecs update-service --cluster ${{ needs.deploy-cfn-prod.outputs.cluster_name_prod }} \
+                                 --service ${{ needs.deploy-cfn-prod.outputs.service_name_prod }} \
+                                 --force-new-deployment \
+                                 --region us-east-1
+          aws ecs wait services-stable --cluster ${{ needs.deploy-cfn-prod.outputs.cluster_name_prod }} --services ${{ needs.deploy-cfn-prod.outputs.service_name_prod }} --region us-east-1
+
+  smoke-test-prod:
+    needs: [update-service-prod, deploy-cfn-prod]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run Smoke Tests
+        env:
+          APP_BASE_URL: ${{ needs.deploy-cfn-prod.outputs.alb_url_prod }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          echo "Running smoke tests against $APP_BASE_URL"
+          sleep 30
+          pytest tests/test_smoke_app.py -v
