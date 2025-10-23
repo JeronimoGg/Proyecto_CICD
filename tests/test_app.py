@@ -1,4 +1,3 @@
-import pytest
 import json
 import os
 from app.app import app

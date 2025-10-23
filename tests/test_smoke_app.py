@@ -1,5 +1,5 @@
-import pytest
 import requests
+import os
 from app.app import app
 from app.todo_manager import TodoManager
 
@@ -27,7 +27,6 @@ class TestSmokeApp:
         if 'TESTING' in os.environ:
             del os.environ['TESTING']
             
-        import os
         if os.path.exists(self.test_file):
             os.remove(self.test_file)
     
