@@ -1,349 +1,199 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'To-Do List Application on AWS ECS Fargate with Application Load Balancer'
+Description: >
+  CloudFormation template para desplegar la aplicacion To-Do List en ECS Fargate
+  con ALB. Usa la VPC por defecto y el LabRole existente.
 
 Parameters:
-  Environment:
+  EnvironmentName:
     Type: String
-    Default: production
-    AllowedValues: [dev, staging, production]
-    Description: Environment name
-  
+    Description: "Nombre del entorno (ej: staging, production). Usado para nombrar recursos."
+    AllowedValues: [staging, production]
   DockerImageUri:
     Type: String
-    Default: latest
-    Description: Docker image URI to deploy
+    Description: "URI completo de la imagen Docker a desplegar (ej: usuario/repo:tag)."
+  LabRoleArn:
+    Type: String
+    Description: ARN completo del rol IAM 'LabRole' existente en la cuenta.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID de la VPC por defecto donde desplegar.
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Lista de al menos DOS IDs de subredes PUBLICAS de la VPC por defecto en diferentes AZs.
 
 Resources:
-  # CloudWatch Log Group
-  TodoListLogGroup:
+  # --- Grupo de Logs para ECS ---
+  ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '/aws/ecs/todo-list-${Environment}'
-      RetentionInDays: 30
+      LogGroupName: !Sub '/ecs/todo-list-${EnvironmentName}-task'
+      RetentionInDays: 7 # Retener logs por 7 días (ajusta si es necesario)
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
 
-  # ECS Cluster
-  TodoListCluster:
+  # --- Cluster ECS ---
+  ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Sub 'todo-list-cluster-${Environment}'
-      CapacityProviders:
-        - FARGATE
-        - FARGATE_SPOT
-      DefaultCapacityProviderStrategy:
-        - CapacityProvider: FARGATE
-          Weight: 1
+      ClusterName: !Sub 'todo-list-${EnvironmentName}-cluster'
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
 
-  # Application Load Balancer
-  TodoListALB:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      Name: !Sub 'todo-list-alb-${Environment}'
-      Scheme: internet-facing
-      Type: application
-      Subnets:
-        - !Ref PublicSubnet1
-        - !Ref PublicSubnet2
-      SecurityGroups:
-        - !Ref ALBSecurityGroup
-
-  # ALB Security Group
+  # --- Seguridad ---
+  # Security Group para el Load Balancer (permite HTTP desde internet)
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub 'todo-list-alb-sg-${Environment}'
-      GroupDescription: Security group for To-Do List ALB
+      GroupName: !Sub 'alb-sg-${EnvironmentName}'
+      GroupDescription: Permite trafico HTTP al ALB
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
 
-  # ECS Security Group
-  ECSSecurityGroup:
+  # Security Group para el Servicio ECS (permite trafico desde el ALB en el puerto 5000)
+  ECSServiceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub 'todo-list-ecs-sg-${Environment}'
-      GroupDescription: Security group for To-Do List ECS tasks
+      GroupName: !Sub 'ecs-service-sg-${EnvironmentName}'
+      GroupDescription: Permite trafico desde el ALB al servicio ECS
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 5000
+          FromPort: 5000 # Puerto del contenedor Flask
           ToPort: 5000
-          SourceSecurityGroupId: !Ref ALBSecurityGroup
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
+          SourceSecurityGroupId: !Ref ALBSecurityGroup # Solo permite desde el ALB SG
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
 
-  # ECS Task Definition
-  TodoListTaskDefinition:
-    Type: AWS::ECS::TaskDefinition
+  # --- Load Balancer ---
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Family: !Sub 'todo-list-task-${Environment}'
-      NetworkMode: awsvpc
+      Name: !Sub 'todo-list-${EnvironmentName}-alb'
+      Subnets: !Ref SubnetIds # Debe estar en subredes publicas
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Scheme: internet-facing
+      Type: application
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # Listener HTTP en el puerto 80
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ECSTargetGroup
+
+  # Target Group para las tareas ECS
+  ECSTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'tg-ecs-${EnvironmentName}'
+      VpcId: !Ref VpcId
+      Port: 5000 # Puerto del contenedor Flask
+      Protocol: HTTP
+      TargetType: ip # Necesario para Fargate
+      # --- Propiedades de Health Check ---
+      HealthCheckEnabled: true
+      HealthCheckPath: /health # Endpoint de health check de la app
+      HealthCheckPort: '5000' # Puerto del contenedor Flask
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      # --- Fin Propiedades de Health Check ---
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # --- Definicion de Tarea ECS ---
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: ECSLogGroup # Asegura que el Log Group exista primero
+    Properties:
+      Family: !Sub 'todo-list-${EnvironmentName}-task'
       RequiresCompatibilities:
         - FARGATE
-      Cpu: 256
-      Memory: 512
-      ExecutionRoleArn: !Ref ECSTaskExecutionRole
-      TaskRoleArn: !Ref ECSTaskRole
+      NetworkMode: awsvpc
+      Cpu: '256' # 0.25 vCPU (minimo Fargate)
+      Memory: '512' # 0.5 GB (minimo Fargate)
+      TaskRoleArn: !Ref LabRoleArn # Rol para permisos DENTRO del contenedor (si necesita llamar a otros servicios AWS)
+      ExecutionRoleArn: !Ref LabRoleArn # Rol para que ECS/Fargate pueda descargar imagen, enviar logs, etc.
       ContainerDefinitions:
-        - Name: todo-list-container
-          Image: !Ref DockerImageUri
+        - Name: !Sub 'todo-list-${EnvironmentName}-container'
+          Image: !Ref DockerImageUri # Imagen de Docker Hub
           PortMappings:
             - ContainerPort: 5000
               Protocol: tcp
           LogConfiguration:
             LogDriver: awslogs
             Options:
-              awslogs-group: !Ref TodoListLogGroup
+              # Usar !Ref para hacer referencia al Log Group creado
+              awslogs-group: !Ref ECSLogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
-          Environment:
-            - Name: FLASK_ENV
-              Value: !If [IsProduction, 'production', 'development']
-            - Name: ENVIRONMENT
-              Value: !Ref Environment
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
 
-  # ECS Service
-  TodoListService:
+  # --- Servicio ECS ---
+  ECSService:
     Type: AWS::ECS::Service
-    DependsOn: ALBListener
     Properties:
-      ServiceName: !Sub 'todo-list-service-${Environment}'
-      Cluster: !Ref TodoListCluster
-      TaskDefinition: !Ref TodoListTaskDefinition
-      DesiredCount: 2
+      ServiceName: !Sub 'todo-list-${EnvironmentName}-service'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DesiredCount: 1 # Numero inicial de tareas
       LaunchType: FARGATE
       NetworkConfiguration:
         AwsvpcConfiguration:
+          AssignPublicIp: ENABLED # Necesario en subredes publicas sin NAT Gateway
+          Subnets: !Ref SubnetIds # Las mismas subredes publicas del ALB
           SecurityGroups:
-            - !Ref ECSSecurityGroup
-          Subnets:
-            - !Ref PrivateSubnet1
-            - !Ref PrivateSubnet2
-          AssignPublicIp: DISABLED
+            - !Ref ECSServiceSecurityGroup
       LoadBalancers:
-        - ContainerName: todo-list-container
+        - ContainerName: !Sub 'todo-list-${EnvironmentName}-container'
           ContainerPort: 5000
-          TargetGroupArn: !Ref TodoListTargetGroup
-
-  # Target Group
-  TodoListTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: !Sub 'todo-list-tg-${Environment}'
-      Port: 5000
-      Protocol: HTTP
-      VpcId: !Ref VPC
-      TargetType: ip
-      HealthCheckPath: /health
-      HealthCheckProtocol: HTTP
-      HealthCheckIntervalSeconds: 30
-      HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 3
-
-  # ALB Listener
-  ALBListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref TodoListTargetGroup
-      LoadBalancerArn: !Ref TodoListALB
-      Port: 80
-      Protocol: HTTP
-
-  # ECS Task Execution Role
-  ECSTaskExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub 'todo-list-execution-role-${Environment}'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-
-  # ECS Task Role
-  ECSTaskRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub 'todo-list-task-role-${Environment}'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: CloudWatchLogs
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: '*'
-
-  # VPC
-  VPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: 10.0.0.0/16
-      EnableDnsHostnames: true
-      EnableDnsSupport: true
+          TargetGroupArn: !Ref ECSTargetGroup
+      # DesiredCount y TaskDefinition se actualizan en despliegues posteriores
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50 # Permite que baje al 50% durante el deploy
+        MaximumPercent: 200 # Permite que suba al 200% temporalmente
       Tags:
-        - Key: Name
-          Value: !Sub 'todo-list-vpc-${Environment}'
-
-  # Internet Gateway
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    Properties:
-      Tags:
-        - Key: Name
-          Value: !Sub 'todo-list-igw-${Environment}'
-
-  # Attach Internet Gateway to VPC
-  InternetGatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      InternetGatewayId: !Ref InternetGateway
-      VpcId: !Ref VPC
-
-  # Public Subnet 1
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: 10.0.1.0/24
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: !Sub 'todo-list-public-subnet-1-${Environment}'
-
-  # Public Subnet 2
-  PublicSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select [1, !GetAZs '']
-      CidrBlock: 10.0.2.0/24
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: !Sub 'todo-list-public-subnet-2-${Environment}'
-
-  # Private Subnet 1
-  PrivateSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: 10.0.3.0/24
-      Tags:
-        - Key: Name
-          Value: !Sub 'todo-list-private-subnet-1-${Environment}'
-
-  # Private Subnet 2
-  PrivateSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select [1, !GetAZs '']
-      CidrBlock: 10.0.4.0/24
-      Tags:
-        - Key: Name
-          Value: !Sub 'todo-list-private-subnet-2-${Environment}'
-
-  # Route Table for Public Subnets
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: !Sub 'todo-list-public-rt-${Environment}'
-
-  # Route Table for Private Subnets
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: !Sub 'todo-list-private-rt-${Environment}'
-
-  # Public Route
-  PublicRoute:
-    Type: AWS::EC2::Route
-    DependsOn: InternetGatewayAttachment
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-
-  # Associate Public Subnet 1 with Public Route Table
-  PublicSubnet1RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      SubnetId: !Ref PublicSubnet1
-
-  # Associate Public Subnet 2 with Public Route Table
-  PublicSubnet2RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      SubnetId: !Ref PublicSubnet2
-
-  # Associate Private Subnet 1 with Private Route Table
-  PrivateSubnet1RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      SubnetId: !Ref PrivateSubnet1
-
-  # Associate Private Subnet 2 with Private Route Table
-  PrivateSubnet2RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      SubnetId: !Ref PrivateSubnet2
-
-Conditions:
-  IsProduction: !Equals [!Ref Environment, 'production']
+        - Key: Environment
+          Value: !Ref EnvironmentName
+    DependsOn: # Asegura que el listener exista antes de crear el servicio
+      - ALBListener
 
 Outputs:
-  LoadBalancerURL:
-    Description: URL of the Application Load Balancer
-    Value: !Sub 'http://${TodoListALB.DNSName}'
+  ALBDnsName:
+    Description: DNS Name of the Application Load Balancer
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
     Export:
-      Name: !Sub '${AWS::StackName}-LoadBalancerURL'
-
-  ClusterName:
+      Name: !Sub '${AWS::StackName}-ALBDnsName'
+  ECSClusterName:
     Description: Name of the ECS Cluster
-    Value: !Ref TodoListCluster
+    Value: !Ref ECSCluster
     Export:
-      Name: !Sub '${AWS::StackName}-ClusterName'
-
-  ServiceName:
+      Name: !Sub '${AWS::StackName}-ECSClusterName'
+  ECSServiceName:
     Description: Name of the ECS Service
-    Value: !Ref TodoListService
+    Value: !GetAtt ECSService.Name # Obtener el nombre completo del servicio
     Export:
-      Name: !Sub '${AWS::StackName}-ServiceName'
+      Name: !Sub '${AWS::StackName}-ECSServiceName'

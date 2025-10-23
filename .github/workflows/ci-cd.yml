@@ -140,8 +140,11 @@ jobs:
             --template-file template.yaml \
             --stack-name todo-list-staging-stack \
             --parameter-overrides \
-              Environment=staging \
+              EnvironmentName=staging \
               DockerImageUri=$IMAGE_URI \
+              LabRoleArn=${{ secrets.LAB_ROLE_ARN }} \
+              VpcId=${{ secrets.VPC_ID }} \
+              SubnetIds=${{ secrets.SUBNET_IDS }} \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changes
 
@@ -227,8 +230,11 @@ jobs:
             --template-file template.yaml \
             --stack-name todo-list-prod-stack \
             --parameter-overrides \
-              Environment=production \
+              EnvironmentName=production \
               DockerImageUri=$IMAGE_URI \
+              LabRoleArn=${{ secrets.LAB_ROLE_ARN }} \
+              VpcId=${{ secrets.VPC_ID }} \
+              SubnetIds=${{ secrets.SUBNET_IDS }} \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changes
       - name: Get Production Stack Outputs
