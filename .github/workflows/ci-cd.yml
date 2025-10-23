@@ -53,6 +53,12 @@ jobs:
         flags: unit-integration
         name: codecov-umbrella
         
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        
     - name: Build Docker image
       run: |
         docker build -t $ECR_REPOSITORY:dev .
