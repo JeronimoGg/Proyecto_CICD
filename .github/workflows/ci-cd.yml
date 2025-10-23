@@ -1,23 +1,28 @@
 # Nombre del Workflow
-name: CI/CD Pipeline AWS ECS con CloudFormation
+name: CI/CD Pipeline AWS ECS con CloudFormation - Multi-Branch Strategy
 
 # Disparadores del Workflow
 on:
   push:
     branches:
-      - main # Se ejecuta en push a la rama main
+      - dev      # Pruebas unitarias e integración
+      - staging  # Pruebas de aceptación y despliegue staging
+      - main     # Pruebas smoke y despliegue producción
   pull_request:
     branches:
-      - main # Se ejecuta en pull requests hacia main
+      - dev
+      - staging
+      - main
   workflow_dispatch: # Permite ejecución manual desde la UI de GitHub Actions
 
 # Definición de los trabajos (Jobs)
 jobs:
   # -------------------------------------
-  # Job de CI (Build, Test, Publish Docker Image)
+  # Job de CI (Build, Test Unitarios e Integración) - SOLO en DEVELOP
   # -------------------------------------
-  build-test-publish:
+  build-test-unit-integration:
     runs-on: ubuntu-latest # Runner a utilizar
+    if: github.ref == 'refs/heads/dev' || github.event_name == 'pull_request'
     outputs:
       repo_name: ${{ steps.set_outputs.outputs.repo_name }}
       image_tag: ${{ steps.set_outputs.outputs.image_tag }}
@@ -51,23 +56,22 @@ jobs:
       - name: Run Flake8 (Linter)
         run: flake8 app --output-file=flake8-report.txt || true # Continúa aunque falle Flake8 (para Sonar)
 
-      # 7. Ejecutar Pruebas Unitarias con Pytest y generar reporte de cobertura
-      - name: Run Unit Tests with pytest and Coverage
+      # 7. Ejecutar Pruebas Unitarias y de Integración
+      - name: Run Unit and Integration Tests
         run: |
-          # Ejecuta solo pruebas unitarias, excluyendo aceptación y humo
-          pytest --ignore=tests/test_acceptance_app.py  --ignore=tests/test_smoke_app.py  # Genera un informe XML para SonarCloud
+          # Ejecuta solo pruebas unitarias y de integración
+          pytest tests/test_todo_manager.py tests/test_app.py --cov=app --cov-report=term-missing --cov-report=html --cov-report=xml --cov-branch --html=report.html --self-contained-html
 
-      # SE ELIMINAN DEL JOB DE CI EL PASO DE ACCEPTANCE TESTS, PASA AL JOB DE CD.
-
-      # 7.1. Cargar reportes de cobertura y pruebas unitarias como artefactos
+      # 8. Cargar reportes de cobertura y pruebas como artefactos
       - name: Upload Test Reports Artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-reports
+          name: test-reports-develop
           path: |
             htmlcov/
             report.html
+            coverage.xml
 
       # 9. Ejecutar análisis con SonarCloud
       - name: SonarCloud Scan
@@ -76,30 +80,29 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Automáticamente proporcionado
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # El secreto que creaste
 
-      # --- Pasos de Docker (solo en push a main) ---
-
-      # 9. Configurar QEMU (para buildx multi-plataforma, aunque no lo usemos explícitamente)
+      # --- Pasos de Docker (solo en dev para preparar imagen) ---
+      # 10. Configurar QEMU (para buildx multi-plataforma)
       - name: Set up QEMU
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: docker/setup-qemu-action@v3
 
-      # 10. Configurar Docker Buildx (constructor avanzado)
+      # 11. Configurar Docker Buildx (constructor avanzado)
       - name: Set up Docker Buildx
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: docker/setup-buildx-action@v3
 
-      # 11. Iniciar sesión en Docker Hub
+      # 12. Iniciar sesión en Docker Hub
       - name: Login to Docker Hub
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 12. Construir y pushear imagen Docker a Docker Hub
+      # 13. Construir y pushear imagen Docker a Docker Hub
       - name: Build and push Docker image
         id: docker_build_push # Darle ID para referenciar output
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -107,26 +110,25 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:dev
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 13. Establecer las salidas del job usadas para el despliegue
+      # 14. Establecer las salidas del job usadas para el despliegue
       - name: Set Job Outputs
         id: set_outputs
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         run: |
           echo "repo_name=${{ github.event.repository.name }}" >> $GITHUB_OUTPUT
           echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
 
-
   # -------------------------------------
-  # Job de Despliegue CloudFormation Staging
+  # Job de Pruebas de Aceptación y Despliegue Staging - SOLO en STAGING
   # -------------------------------------
-  deploy-cfn-staging:
-    needs: build-test-publish # Depende del job anterior (necesita image_uri)
+  test-acceptance-deploy-staging:
+    needs: build-test-unit-integration # Depende del job anterior
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' # Solo en push a main
+    if: github.ref == 'refs/heads/staging' # Solo en push a staging
     outputs:
       alb_url_staging: ${{ steps.get_stack_outputs.outputs.alb_url }}
       cluster_name_staging: "todo-list-staging-cluster"
@@ -149,9 +151,9 @@ jobs:
       # 3. Desplegar/Actualizar el stack CloudFormation de Staging
       - name: Deploy CloudFormation Staging Stack
         run: |
-          # Reconstruir la URI de la imagen usando el secreto y las salidas separadas
-          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.build-test-publish.outputs.repo_name }}:${{ needs.build-test-publish.outputs.image_tag }}"
-          echo "Deploying Image URI: $IMAGE_URI" # Log para verificar (el username se ocultará aquí)
+          # Usar la imagen más reciente de dev
+          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:dev"
+          echo "Deploying Image URI: $IMAGE_URI" # Log para verificar
 
           aws cloudformation deploy \
             --template-file template.yaml \
@@ -167,9 +169,9 @@ jobs:
 
       # 4. Obtener las salidas del Stack CloudFormation Staging
       - name: Get Staging Stack Outputs
-        id: get_stack_outputs
+      id: get_stack_outputs
         run: |
-          # Instalar jq si no está presente (común en ubuntu-latest, pero por si acaso)
+          # Instalar jq si no está presente
           if ! command -v jq &> /dev/null; then
              sudo apt-get update && sudo apt-get install -y jq
           fi
@@ -190,79 +192,47 @@ jobs:
           echo "ALB URL Staging: $ALB_URL_HTTP"
           echo "alb_url=${ALB_URL_HTTP}" >> $GITHUB_OUTPUT
 
-  # -------------------------------------
-  # Job de Actualización Servicio Staging (ECS - Forzar despliegue)
-  # -------------------------------------
-  update-service-staging:
-    # Depende de que CFN haya actualizado la Task Definition
-    needs: [build-test-publish, deploy-cfn-staging]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      # 1. Configurar credenciales de AWS (CON SESSION TOKEN)
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }} # <--- USO DEL SESSION TOKEN
-          aws-region: us-east-1
-
-      # 2. Forzar un nuevo despliegue en el servicio ECS de Staging
+      # 5. Forzar un nuevo despliegue en el servicio ECS de Staging
       - name: Force New Deployment ECS Service Staging
         run: |
           echo "Forcing new deployment for Staging service..."
-          aws ecs update-service --cluster ${{ needs.deploy-cfn-staging.outputs.cluster_name_staging }} \
-                                --service ${{ needs.deploy-cfn-staging.outputs.service_name_staging }} \
+          aws ecs update-service --cluster todo-list-staging-cluster \
+                                --service todo-list-staging-service \
                                 --force-new-deployment \
                                 --region us-east-1
           # Esperar a que el despliegue se estabilice
           echo "Waiting for Staging service deployment to stabilize..."
-          aws ecs wait services-stable --cluster ${{ needs.deploy-cfn-staging.outputs.cluster_name_staging }} --services ${{ needs.deploy-cfn-staging.outputs.service_name_staging }} --region us-east-1
+          aws ecs wait services-stable --cluster todo-list-staging-cluster --services todo-list-staging-service --region us-east-1
           echo "Staging service deployment stable."
 
-  # -------------------------------------
-  # Job de Pruebas de Aceptación en Staging
-  # -------------------------------------
-  test-staging:
-    needs: [update-service-staging, deploy-cfn-staging] # Depende de que el servicio esté estable con la nueva versión
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      # 1. Checkout del código (para acceder a las pruebas)
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # 2. Configurar Python
+      # 6. Configurar Python para pruebas de aceptación
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      # 3. Instalar dependencias de prueba
+      # 7. Instalar dependencias de prueba
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt # Incluye selenium, pytest
 
-      # 4. Ejecutar pruebas de aceptación contra el entorno de Staging
+      # 8. Ejecutar pruebas de aceptación contra el entorno de Staging
       - name: Run Acceptance Tests against Staging
         env:
-          APP_BASE_URL: ${{ needs.deploy-cfn-staging.outputs.alb_url_staging }} # URL del ALB de Staging desde salidas
+          APP_BASE_URL: ${{ steps.get_stack_outputs.outputs.alb_url }} # URL del ALB de Staging desde salidas
         run: |
           echo "Running acceptance tests against: $APP_BASE_URL"
           sleep 30 # Espera prudencial para el registro del target en el ALB
-          pytest tests/test_acceptance_app.py # Ejecutar las pruebas de aceptación
+          pytest tests/test_acceptance_app.py -v # Ejecutar las pruebas de aceptación
 
   # -------------------------------------
-  # Job de Despliegue CloudFormation Producción
+  # Job de Despliegue Producción y Pruebas Smoke - SOLO en MAIN
   # -------------------------------------
-  deploy-cfn-prod:
-    needs: [build-test-publish, test-staging] # Depende de la imagen y de que Staging esté OK
+  deploy-prod-smoke-test:
+    needs: test-acceptance-deploy-staging # Depende de que staging esté OK
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' # Solo en push a main
     outputs: # Definir salida para la URL del ALB de producción
       alb_url_prod: ${{ steps.get_stack_outputs.outputs.alb_url }}
       cluster_name_prod: "todo-list-production-cluster"
@@ -285,8 +255,8 @@ jobs:
       # 3. Desplegar/Actualizar el stack CloudFormation de Producción
       - name: Deploy CloudFormation Production Stack
         run: |
-          # Reconstruir la URI de la imagen usando el secreto y las salidas separadas
-          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.build-test-publish.outputs.repo_name }}:${{ needs.build-test-publish.outputs.image_tag }}"
+          # Usar la imagen de staging que ya pasó las pruebas de aceptación
+          IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:dev"
           echo "Deploying Image URI: $IMAGE_URI" # Log para verificar
 
           aws cloudformation deploy \
@@ -326,67 +296,36 @@ jobs:
           echo "ALB URL Production: $ALB_URL_HTTP"
           echo "alb_url=${ALB_URL_HTTP}" >> $GITHUB_OUTPUT
 
-  # -------------------------------------
-  # Job de Actualización Servicio Producción (ECS - Forzar despliegue)
-  # -------------------------------------
-  update-service-prod:
-    needs: [build-test-publish, deploy-cfn-prod] # Depende de que CFN haya actualizado la Task Def de Prod
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      # 1. Configurar credenciales de AWS (CON SESSION TOKEN)
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }} # <--- USO DEL SESSION TOKEN
-          aws-region: us-east-1
-
-      # 2. Forzar un nuevo despliegue en el servicio ECS de Producción
+      # 5. Forzar un nuevo despliegue en el servicio ECS de Producción
       - name: Force New Deployment ECS Service Production
         run: |
           echo "Forcing new deployment for Production service..."
-          aws ecs update-service --cluster ${{ needs.deploy-cfn-prod.outputs.cluster_name_prod }} \
-                                --service ${{ needs.deploy-cfn-prod.outputs.service_name_prod }} \
+          aws ecs update-service --cluster todo-list-production-cluster \
+                                --service todo-list-production-service \
                                 --force-new-deployment \
                                 --region us-east-1
           # Esperar a que el despliegue se estabilice
           echo "Waiting for Production service deployment to stabilize..."
-          aws ecs wait services-stable --cluster ${{ needs.deploy-cfn-prod.outputs.cluster_name_prod }} --services ${{ needs.deploy-cfn-prod.outputs.service_name_prod }} --region us-east-1
+          aws ecs wait services-stable --cluster todo-list-production-cluster --services todo-list-production-service --region us-east-1
           echo "Production service deployment stable."
 
-  # -------------------------------------
-  # Job de Pruebas de Humo en Producción
-  # -------------------------------------
-  smoke-test-prod:
-    needs: [update-service-prod, deploy-cfn-prod] # Depende de que el servicio de prod esté estable
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      # 1. Checkout del código
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # 2. Configurar Python
+      # 6. Configurar Python para pruebas smoke
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      # 3. Instalar dependencias de prueba
+      # 7. Instalar dependencias de prueba
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. Ejecutar pruebas de humo contra el entorno de Producción
+      # 8. Ejecutar pruebas de humo contra el entorno de Producción
       - name: Run Smoke Tests against Production
         env:
-          APP_BASE_URL: ${{ needs.deploy-cfn-prod.outputs.alb_url_prod }} # URL del ALB de Producción desde salidas
+          APP_BASE_URL: ${{ steps.get_stack_outputs.outputs.alb_url }} # URL del ALB de Producción desde salidas
         run: |
           echo "Running smoke tests against: $APP_BASE_URL"
           sleep 30 # Espera prudencial
-          pytest tests/test_smoke_app.py # Ejecutar las pruebas de humo
+          pytest tests/test_smoke_app.py -v # Ejecutar las pruebas de humo
